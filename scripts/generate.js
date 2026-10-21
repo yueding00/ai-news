@@ -72,21 +72,40 @@ const segC = `接续今日《AI 资讯日报》，只输出以下三个分区（
 ${common}`;
 
 function loadAuth() {
+  const provider = process.env.AI_PROVIDER || 'anthropic';
+  if (provider === 'github-models') {
+    if (!process.env.GITHUB_TOKEN) throw new Error('missing GITHUB_TOKEN for github-models provider');
+    return { provider, model: process.env.GH_MODEL || 'openai/gpt-4.1' };
+  }
   if (process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_AUTH_TOKEN) {
-    return { base: process.env.ANTHROPIC_BASE_URL.replace(/\/$/, ''), token: process.env.ANTHROPIC_AUTH_TOKEN, model: process.env.ANTHROPIC_MODEL || 'deepseek-v4-flash[1M]' };
+    return { provider, base: process.env.ANTHROPIC_BASE_URL.replace(/\/$/, ''), token: process.env.ANTHROPIC_AUTH_TOKEN, model: process.env.ANTHROPIC_MODEL || 'deepseek-v4-flash[1M]' };
   }
   const s = JSON.parse(fs.readFileSync('C:/Users/huangyicheng/.claude/settings.json', 'utf8'));
   const base = (s.env && s.env.ANTHROPIC_BASE_URL || '').replace(/\/$/, '');
   const token = s.env && s.env.ANTHROPIC_AUTH_TOKEN;
   const model = (s.env && s.env.ANTHROPIC_MODEL) || 'deepseek-v4-flash[1M]';
   if (!base || !token) throw new Error('missing ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN');
-  return { base, token, model };
+  return { provider, base, token, model };
 }
 
 async function callAPI(auth, prompt, maxTokens, timeoutMs) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
+    if (auth.provider === 'github-models') {
+      const r = await fetch('https://models.github.ai/inference/chat/completions', {
+        method: 'POST', signal: ctl.signal,
+        headers: { 'content-type': 'application/json', authorization: 'Bearer ' + process.env.GITHUB_TOKEN },
+        body: JSON.stringify({ model: auth.model, max_tokens: Math.min(maxTokens, 8000), messages: [{ role: 'user', content: prompt }] }),
+      });
+      const txt = await r.text();
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${txt.slice(0, 300)}`);
+      const j = JSON.parse(txt);
+      const text = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
+      if (!text) throw new Error('empty completion');
+      console.error(`segment done: ${text.length} chars, finish_reason=${(j.choices && j.choices[0] && j.choices[0].finish_reason) || '?'}`);
+      return text;
+    }
     const r = await fetch(auth.base + '/v1/messages', {
       method: 'POST', signal: ctl.signal,
       headers: { 'content-type': 'application/json', 'x-api-key': auth.token, 'anthropic-version': '2023-06-01' },

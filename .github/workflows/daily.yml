@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  models: read
 
 concurrency:
   group: ai-news
@@ -18,9 +19,9 @@ jobs:
     timeout-minutes: 40
     env:
       AI_NEWS_DIR: ${{ github.workspace }}/data
-      ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-      ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-      ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+      AI_PROVIDER: github-models
+      GH_MODEL: openai/gpt-4.1
+      GITHUB_TOKEN: ${{ github.token }}
       WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
     steps:
       - uses: actions/checkout@v4

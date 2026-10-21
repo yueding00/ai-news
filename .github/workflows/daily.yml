@@ -1,0 +1,53 @@
+name: ai-news-daily
+
+on:
+  schedule:
+    - cron: '20 1 * * *'   # 09:20 Asia/Shanghai
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ai-news
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      AI_NEWS_DIR: ${{ github.workspace }}/data
+      ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+      ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+      WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: fetch candidates
+        run: node scripts/fetch-all.js
+
+      - name: generate digest
+        run: node scripts/generate.js
+
+      - name: generate push version
+        run: node scripts/generate-push.js
+
+      - name: build html
+        run: node scripts/md2html.js
+
+      - name: push to WeCom
+        run: node scripts/push-http.js
+
+      - name: commit results
+        run: |
+          git config user.name "ai-news-bot"
+          git config user.email "ai-news-bot@users.noreply.github.com"
+          git add -A data
+          git commit -m "daily: $(date -u +%F)" || echo "no changes"
+          git push

@@ -1,8 +1,9 @@
 name: ai-news-daily
 
 on:
-  schedule:
-    - cron: '20 1 * * *'   # 09:20 Asia/Shanghai
+  # schedule disabled until a public LLM API key is configured (GitHub Models retired 2026-07-30)
+  # schedule:
+  #   - cron: '20 1 * * *'   # 09:20 Asia/Shanghai
   workflow_dispatch:
 
 permissions:

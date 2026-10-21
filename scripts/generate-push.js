@@ -33,9 +33,12 @@ ${md}`;
 
 function loadAuth() {
   const provider = process.env.AI_PROVIDER || 'anthropic';
-  if (provider === 'github-models') {
-    if (!process.env.GITHUB_TOKEN) throw new Error('missing GITHUB_TOKEN for github-models provider');
-    return { provider, model: process.env.GH_MODEL || 'openai/gpt-4.1' };
+  if (provider === 'openai') {
+    const base = (process.env.LLM_BASE_URL || '').replace(/\/$/, '');
+    const key = process.env.LLM_API_KEY;
+    const model = process.env.LLM_MODEL || 'deepseek-chat';
+    if (!base || !key) throw new Error('missing LLM_BASE_URL / LLM_API_KEY for openai provider');
+    return { provider, base, key, model };
   }
   if (process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_AUTH_TOKEN) {
     return { provider, base: process.env.ANTHROPIC_BASE_URL.replace(/\/$/, ''), token: process.env.ANTHROPIC_AUTH_TOKEN, model: process.env.ANTHROPIC_MODEL || 'deepseek-v4-flash[1M]' };
@@ -52,10 +55,10 @@ async function callAPI(auth, timeoutMs) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    if (auth.provider === 'github-models') {
-      const r = await fetch('https://models.github.ai/inference/chat/completions', {
+    if (auth.provider === 'openai') {
+      const r = await fetch(auth.base + '/chat/completions', {
         method: 'POST', signal: ctl.signal,
-        headers: { 'content-type': 'application/json', authorization: 'Bearer ' + process.env.GITHUB_TOKEN },
+        headers: { 'content-type': 'application/json', authorization: 'Bearer ' + auth.key },
         body: JSON.stringify({ model: auth.model, max_tokens: 8000, messages: [{ role: 'user', content: prompt }] }),
       });
       const txt = await r.text();

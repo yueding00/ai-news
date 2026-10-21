@@ -20,9 +20,10 @@ jobs:
     timeout-minutes: 40
     env:
       AI_NEWS_DIR: ${{ github.workspace }}/data
-      AI_PROVIDER: github-models
-      GH_MODEL: openai/gpt-4.1
-      GITHUB_TOKEN: ${{ github.token }}
+      AI_PROVIDER: openai
+      LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL }}
       WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
     steps:
       - uses: actions/checkout@v4

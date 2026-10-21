@@ -2,6 +2,7 @@
 // 用法: node generate-push.js [--dry]
 'use strict';
 const fs = require('fs');
+const path = require('path');
 
 const pad = n => String(n).padStart(2, '0');
 const now = new Date();
@@ -49,7 +50,7 @@ async function callAPI(auth, timeoutMs) {
     const r = await fetch(auth.base + '/v1/messages', {
       method: 'POST', signal: ctl.signal,
       headers: { 'content-type': 'application/json', 'x-api-key': auth.token, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: auth.model, max_tokens: 4000, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({ model: auth.model, max_tokens: 10000, messages: [{ role: 'user', content: prompt }] }),
     });
     const txt = await r.text();
     if (!r.ok) throw new Error(`HTTP ${r.status}: ${txt.slice(0, 300)}`);

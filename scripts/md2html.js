@@ -13,10 +13,10 @@ const path = require('path');
 const now = new Date();
 const pad2 = n => String(n).padStart(2, '0');
 const today = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+const ROOT = process.env.AI_NEWS_DIR || 'D:\\ai-news';
 const mdFile = process.argv[2] && !process.argv[2].startsWith('--')
   ? process.argv[2]
   : path.join(ROOT, `${today}.md`);
-const ROOT = process.env.AI_NEWS_DIR || 'D:\\ai-news';
 const htmlDir = process.argv[3] || path.join(ROOT, 'html');
 const isDry = process.argv.includes('--dry');
 

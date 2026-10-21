@@ -126,7 +126,9 @@ async function callAPI(auth, prompt, maxTokens, timeoutMs) {
 
 async function callWithRetry(auth, prompt, maxTokens) {
   let lastErr = null;
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  const delays = [0, 30000, 90000]; // backoff for gateway hiccups
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (delays[attempt - 1]) await new Promise(r => setTimeout(r, delays[attempt - 1]));
     try { return await callAPI(auth, prompt, maxTokens, 180000); }
     catch (e) { lastErr = e; console.error(`generate: attempt ${attempt} failed: ${e.message}`); }
   }

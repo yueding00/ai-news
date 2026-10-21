@@ -85,7 +85,9 @@ async function callAPI(auth, timeoutMs) {
 (async () => {
   const auth = loadAuth();
   let out = '', lastErr = null;
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  const delays = [0, 30000, 90000];
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (delays[attempt - 1]) await new Promise(r => setTimeout(r, delays[attempt - 1]));
     try { out = await callAPI(auth, 120000); lastErr = null; break; }
     catch (e) { lastErr = e; console.error(`generate-push: attempt ${attempt} failed: ${e.message}`); }
   }

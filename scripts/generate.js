@@ -28,7 +28,7 @@ try {
   }
 } catch (e) { /* 无历史则跳过 */ }
 
-const common = `你是资深 AI 资讯编辑。只使用下面「候选新闻清单」里的信息与链接，不得编造。每条至少两句、重点条目 3~4 句（是什么 + 关键数字/细节 + 影响）；对「发品·商品分类·AI 产品开发」可直接落地的条目，描述末尾加「（⭐项目可用）」。来源写作（来源A/来源B），链接用清单里的 URL。去重：以下标题已在前一天日报发过，不要重复：${prevTitles.length ? prevTitles.join('；') : '（无）'}
+const common = `你是资深 AI 资讯编辑。只使用下面「候选新闻清单」里的信息与链接，不得编造。**候选清单里凡是有价值、且未被去重的条目都应尽量收录——目标是一份 44~48 条的完整日报，宁可多写不要偷工减料。** 每条至少两句、重点条目 3~4 句（是什么 + 关键数字/细节 + 影响）；对「发品·商品分类·AI 产品开发」可直接落地的条目，描述末尾加「（⭐项目可用）」。来源写作（来源A/来源B），链接用清单里的 URL。去重：以下标题已在前一天日报发过，不要重复：${prevTitles.length ? prevTitles.join('；') : '（无）'}
 
 候选新闻清单：
 ${candidates}`;
@@ -41,33 +41,33 @@ const segA = `生成今日《AI 资讯日报》的【前半部分】，只输出
 ## 🧠 模型 · 产品 · 技术
 
 ### 模型 & 产品
-（7~10 条）
+（10~12 条，请写满区间上限）
 
 ### 框架 · 开源 · MCP · Skills
-（7~9 条）
+（9~10 条，请写满区间上限）
 
 ${common}`;
 
 const segB = `接续今日《AI 资讯日报》，只输出以下两个分区（不要输出标题行、不要输出其他分区、不要输出页脚）：
 
 ### 技术方向 & 论文
-（4~6 条）
+（6~8 条，请写满区间上限）
 
 ### 新品速递（Show HN）
-（3~4 条）
+（3~4 条，请写满区间上限）
 
 ${common}`;
 
 const segC = `接续今日《AI 资讯日报》，只输出以下三个分区（不要输出标题行、不要输出其他分区、不要输出页脚）：
 
 ## 🏢 公司 & 融资
-（2~3 条）
+（3 条）
 
 ## 🇨🇳 国内动态
-（2~4 条）
+（3~4 条，请写满区间上限）
 
 ## 💬 社区热议
-（4~6 条）
+（6~7 条，请写满区间上限）
 
 ${common}`;
 
@@ -126,11 +126,15 @@ async function callAPI(auth, prompt, maxTokens, timeoutMs) {
 
 async function callWithRetry(auth, prompt, maxTokens) {
   let lastErr = null;
-  const delays = [0, 30000, 90000]; // backoff for gateway hiccups
+  // gateway routes some model IDs inconsistently (e.g. [1M] intermittently 400s);
+  // rotate model names across attempts, with backoff.
+  const modelFallbacks = [auth.model, 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp[1M]'];
+  const delays = [0, 30000, 90000];
   for (let attempt = 1; attempt <= 3; attempt++) {
     if (delays[attempt - 1]) await new Promise(r => setTimeout(r, delays[attempt - 1]));
-    try { return await callAPI(auth, prompt, maxTokens, 180000); }
-    catch (e) { lastErr = e; console.error(`generate: attempt ${attempt} failed: ${e.message}`); }
+    const model = modelFallbacks[Math.min(attempt - 1, modelFallbacks.length - 1)];
+    try { return await callAPI({ ...auth, model }, prompt, maxTokens, 180000); }
+    catch (e) { lastErr = e; console.error(`generate: attempt ${attempt} (${model}) failed: ${e.message}`); }
   }
   throw lastErr;
 }
@@ -153,11 +157,11 @@ function countSources(md) {
 (async () => {
   const auth = loadAuth();
   console.error('generate: segment A (head + models + oss)...');
-  const a = cleanSeg(await callWithRetry(auth, segA, 16000));
+  const a = cleanSeg(await callWithRetry(auth, segA, 32000));
   console.error('generate: segment B (papers + new)...');
-  const b = cleanSeg(await callWithRetry(auth, segB, 16000));
+  const b = cleanSeg(await callWithRetry(auth, segB, 32000));
   console.error('generate: segment C (biz + cn + hn)...');
-  const c = cleanSeg(await callWithRetry(auth, segC, 16000));
+  const c = cleanSeg(await callWithRetry(auth, segC, 32000));
 
   let md = `# AI 资讯日报 · ${today}（周${weekday}）\n\n${a}\n\n${b}\n\n${c}\n`;
   const sources = countSources(md);

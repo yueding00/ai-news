@@ -12,6 +12,8 @@ const ROOT = process.env.AI_NEWS_DIR || 'D:\\ai-news';
 const MD = path.join(ROOT, `${today}.md`);
 if (!fs.existsSync(MD)) { console.error(`generate-push: missing ${MD}`); process.exit(1); }
 const md = fs.readFileSync(MD, 'utf8');
+// 只保留条目行（标题+描述+来源），去掉链接与页脚，降低输入与思考负担
+const entries = (md.match(/^- \*\*.*$/gm) || []).join('\n');
 
 const prompt = `你是 AI 日报编辑。把下面这份完整版日报改写成「企业微信推送版」Markdown。
 
@@ -28,8 +30,8 @@ const prompt = `你是 AI 日报编辑。把下面这份完整版日报改写成
 5. 保留原文关键数字与事实，不得编造；对项目可用的条目可加 ⭐。
 6. 只输出推送版正文，不要任何解释。
 
-完整版日报：
-${md}`;
+日报条目（每行一条，含标题/描述/来源）：
+${entries}`;
 
 function loadAuth() {
   const provider = process.env.AI_PROVIDER || 'anthropic';
@@ -59,7 +61,7 @@ async function callAPI(auth, timeoutMs) {
       const r = await fetch(auth.base + '/chat/completions', {
         method: 'POST', signal: ctl.signal,
         headers: { 'content-type': 'application/json', authorization: 'Bearer ' + auth.key },
-        body: JSON.stringify({ model: auth.model, max_tokens: 8000, messages: [{ role: 'user', content: prompt }] }),
+        body: JSON.stringify({ model: auth.model, max_tokens: 64000, messages: [{ role: 'user', content: prompt }] }),
       });
       const txt = await r.text();
       if (!r.ok) throw new Error(`HTTP ${r.status}: ${txt.slice(0, 300)}`);
@@ -85,11 +87,13 @@ async function callAPI(auth, timeoutMs) {
 (async () => {
   const auth = loadAuth();
   let out = '', lastErr = null;
+  const modelFallbacks = [auth.model, 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp[1M]'];
   const delays = [0, 30000, 90000];
   for (let attempt = 1; attempt <= 3; attempt++) {
     if (delays[attempt - 1]) await new Promise(r => setTimeout(r, delays[attempt - 1]));
-    try { out = await callAPI(auth, 120000); lastErr = null; break; }
-    catch (e) { lastErr = e; console.error(`generate-push: attempt ${attempt} failed: ${e.message}`); }
+    const model = modelFallbacks[Math.min(attempt - 1, modelFallbacks.length - 1)];
+    try { out = await callAPI({ ...auth, model }, 120000); lastErr = null; break; }
+    catch (e) { lastErr = e; console.error(`generate-push: attempt ${attempt} (${model}) failed: ${e.message}`); }
   }
   if (lastErr) process.exit(1);
 

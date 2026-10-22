@@ -41,9 +41,9 @@ if not errorlevel 1 (
 :nodedupe
 
 rem ---- STAGE 1: collect candidates + generate digest (pure node, no claude CLI) ----
-node D:\ai-news\fetch-all.js
+node D:\ai-news\fetch-all.js >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail1
-node D:\ai-news\generate.js
+node D:\ai-news\generate.js >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail1
 if not exist "D:\ai-news\%TODAY%.md" goto :fail1
 call :checkfile "D:\ai-news\%TODAY%.md"
@@ -59,9 +59,9 @@ exit /b 1
 
 :stage1ok
 rem ---- STAGE 2: push version + HTML version (pure node) ----
-node D:\ai-news\generate-push.js
+node D:\ai-news\generate-push.js >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail2
-node D:\ai-news\md2html.js
+node D:\ai-news\md2html.js >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail2
 call :checkfile "D:\ai-news\%TODAY%.push.md"
 if errorlevel 1 goto :fail2

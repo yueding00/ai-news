@@ -38,13 +38,16 @@ async function postJSON(url, body) {
     let content = fs.readFileSync(pushFile, 'utf8');
     while (Buffer.byteLength(content, 'utf8') > 3900) content = content.slice(0, Math.floor(content.length * 0.95));
     await postJSON(webhook, { msgtype: 'markdown', markdown: { content } });
+    const p2 = n => String(n).padStart(2, '0');
+    const stamp = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
+    fs.appendFileSync(path.join(ROOT, 'push.log'), `===== ${stamp} push ok (markdown)\n`);
     console.log('push-http: markdown ok');
   } else {
     console.error('push-http: no push.md, skip markdown');
   }
 
   // 2) html file card
-  if (fs.existsSync(htmlFile)) {
+  if (fs.existsSync(htmlFile) && !process.env.PUSH_SKIP_FILE) {
     const buf = fs.readFileSync(htmlFile);
     const form = new FormData();
     form.append('media', new Blob([buf], { type: 'text/html' }), `${today}.html`);

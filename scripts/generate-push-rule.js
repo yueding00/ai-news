@@ -37,8 +37,10 @@ for (const line of md.split('\n')) {
     let rest = m[2];
     // 去掉来源与链接
     rest = rest.replace(/（[^（）]+）\s*\[[^\]]*\]\([^)]*\)\s*$/, '').trim();
-    const first = (rest.split('。')[0] || rest).trim().replace(/[；;]$/, '');
-    (items[cur] = items[cur] || []).push({ title, desc: first });
+    // 取前两句（更厚，接近手写版信息量）
+    const sentences = rest.split('。').map(s => s.trim()).filter(Boolean);
+    const desc = sentences.slice(0, 2).join('。');
+    (items[cur] = items[cur] || []).push({ title, desc });
   }
 }
 

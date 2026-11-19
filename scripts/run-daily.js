@@ -12,7 +12,7 @@ const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate
 const stamp = `${today} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 const log = (...a) => console.log(`[${stamp}]`, ...a);
 
-function fail(msg) { log('FAILED:', msg); process.exit(1); }
+function fail(msg) { log('run FAILED:', msg); process.exit(1); }
 
 log('run start');
 

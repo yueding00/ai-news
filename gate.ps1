@@ -1,5 +1,5 @@
 # gate.ps1 - idempotent gate for the AI news daily digest pipeline.
-# Decides on every firing (daily 09:20 main, 09:40/10:10/10:20 backups, at logon):
+# Decides on every firing (daily 09:20 main; backups 09:40/10:10/10:20/15:00/18:00; at logon):
 #   - no run started today               -> launch the full two-stage pipeline (run.cmd)
 #   - run started, still in progress     -> skip (unless stalled, see below)
 #   - stalled (lock owner dead + >15min) -> retry (within daily budget) else blocked+alert
@@ -30,7 +30,10 @@ $newsDir   = 'D:\ai-news'
 $runCmd    = 'C:\Users\huangyicheng\.claude\skills\ai-news\run.cmd'
 $pushPs1   = 'C:\Users\huangyicheng\.claude\skills\ai-news\push.ps1'
 $alertPs1  = 'C:\Users\huangyicheng\.claude\skills\ai-news\alert.ps1'
-$maxStarts = 3   # 1st run + 2 automatic retries per day (09:20/09:40/10:10), alert at 10:20 if all fail
+$maxStarts = 8   # 2026-11-25: gateway outages often outlast the morning window; afternoon
+                 # triggers (15:00/18:00) must be able to retry. After 18:00 retries stop and
+                 # the next firing alerts instead (see Test-CanRetry).
+$alertCutoffHour = 18
 
 $todayDash  = Get-Date -Format 'yyyy-MM-dd'
 $todaySlash = Get-Date -Format 'yyyy/MM/dd'
@@ -145,12 +148,19 @@ function Try-AcquireLock([string]$path) {
   return $false
 }
 
+# Retry allowed only before the alert cutoff hour and within the daily start budget.
+function Test-CanRetry([hashtable]$s) {
+  if ($s.startCount -ge $maxStarts) { return $false }
+  if ((Get-Date).Hour -ge $alertCutoffHour) { return $false }
+  return $true
+}
+
 function Decide([hashtable]$s) {
   if ($s.pushed)       { return 'done' }
   if (-not $s.started) { return 'launch' }
   if ($s.ended)        { return 'pushonly' }
   if ($s.failed) {
-    if ($s.startCount -lt $maxStarts) { return 'retry' }
+    if (Test-CanRetry $s) { return 'retry' }
     return 'blocked'
   }
   return 'inprogress'
@@ -179,7 +189,7 @@ function Resolve-Action([hashtable]$s) {
       }
     }
     if ($stalled) {
-      if ($s.startCount -lt $maxStarts) { $a = 'retry' } else { $a = 'blocked' }
+      if (Test-CanRetry $s) { $a = 'retry' } else { $a = 'blocked' }
     }
   }
   return $a

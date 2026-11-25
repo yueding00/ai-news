@@ -169,9 +169,20 @@ if (isDry) {
     if (re.test(idx)) {
       idx = idx.replace(re, entry);
     } else {
-      const pos = idx.indexOf('<a class="day"');
-      if (pos < 0) { console.log('index.html: no day list found, skipped'); }
-      else idx = idx.slice(0, pos) + entry + '\n' + idx.slice(pos);
+      // 不存在则按日期倒序插入（回补旧日期时不会插到最前面）
+      const lines = idx.split('\n');
+      const days = lines.map((l, i) => ({ l, i })).filter(o => /<a class="day" href="\d{4}-\d{2}-\d{2}\.html">/.test(o.l));
+      if (!days.length) { console.log('index.html: no day list found, skipped'); }
+      else {
+        let at = -1;
+        for (const o of days) {
+          const d = o.l.match(/href="(\d{4}-\d{2}-\d{2})/)[1];
+          if (d < date) { at = o.i; break; }
+        }
+        if (at < 0) at = days[days.length - 1].i + 1;
+        lines.splice(at, 0, entry);
+        idx = lines.join('\n');
+      }
     }
     fs.writeFileSync(idxFile, idx, 'utf8');
     console.log('index.html updated');

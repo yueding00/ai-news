@@ -6,9 +6,11 @@ const fs = require('fs');
 const path = require('path');
 
 const pad = n => String(n).padStart(2, '0');
+const dateArg = (process.argv.find(a => a.startsWith('--date=')) || '').slice(7);
+if (dateArg && !/^\d{4}-\d{2}-\d{2}$/.test(dateArg)) { console.error('generate: bad --date, expect YYYY-MM-DD'); process.exit(1); }
 const now = new Date();
-const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-const weekday = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()];
+const today = dateArg || `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+const weekday = ['日', '一', '二', '三', '四', '五', '六'][new Date(today + 'T12:00:00').getDay()];
 const genTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
 const ROOT = process.env.AI_NEWS_DIR || 'D:\\ai-news';
@@ -43,6 +45,8 @@ JSON 中每个条目对象格式：{"title":"标题","desc":"3~4 句描述","sou
 示例（合格）：{"title":"OpenAI 发布 Decisions API","desc":"OpenAI 基于 GPT-6 Luna 推出 Decisions API，用于分类、路由、评分等有界答案问题。官方称速度最高比 Responses API 快 10 倍，定位低延迟、低成本的小决策场景。该接口可嵌入 Agent 工作流和产品后端，替代部分重推理调用。（⭐项目可用）","source":"OpenAI 官方博客","url":"https://openai.com/index/decisions-api"}
 
 对「发品·商品分类·AI 产品开发」可直接落地的条目，在 desc 末尾加「（⭐项目可用）」。
+🚫 不收以下类别：CEO 换任/人事八卦、纯文娱/电商/饮食新闻、非自动驾驶的车企动态；宁少勿水。
+跨分区不得重复：同一事件只在最合适的一个分区出现一次。
 
 候选新闻清单：
 ${candidates}`;
@@ -110,15 +114,38 @@ async function callAPI(auth, prompt, maxTokens, timeoutMs) {
     }
     const r = await fetch(auth.base + '/v1/messages', {
       method: 'POST', signal: ctl.signal,
-      headers: { 'content-type': 'application/json', 'x-api-key': auth.token, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: auth.model, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }] }),
+      headers: { 'content-type': 'application/json', 'x-api-key': auth.token, 'anthropic-version': '2023-06-01', accept: 'text/event-stream' },
+      body: JSON.stringify({ model: auth.model, stream: true, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }] }),
     });
-    const txt = await r.text();
-    if (!r.ok) throw new Error(`HTTP ${r.status}: ${txt.slice(0, 300)}`);
-    const j = JSON.parse(txt);
-    const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
-    if (!text) throw new Error('empty completion');
-    console.error(`segment done: ${text.length} chars, stop=${j.stop_reason || '?'}`);
+    if (!r.ok) { const txt = await r.text(); throw new Error(`HTTP ${r.status}: ${txt.slice(0, 300)}`); }
+    const ctype = r.headers.get('content-type') || '';
+    if (!ctype.includes('text/event-stream')) {
+      // gateway ignored stream:true — fall back to buffered JSON
+      const j = JSON.parse(await r.text());
+      const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+      if (!text) throw new Error('empty completion');
+      console.error(`segment done (buffered): ${text.length} chars, stop=${j.stop_reason || '?'}`);
+      return text;
+    }
+    // 2026-11-25: long non-stream requests 504 at the gateway (ALB timeout).
+    // Stream and accumulate text deltas; thinking deltas are discarded.
+    let text = '', stop = '?', buf = '';
+    const dec = new TextDecoder();
+    for await (const chunk of r.body) {
+      buf += dec.decode(chunk, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i); buf = buf.slice(i + 2);
+        const dataLine = block.split('\n').find(l => l.startsWith('data: '));
+        if (!dataLine) continue;
+        let evt; try { evt = JSON.parse(dataLine.slice(6)); } catch (e) { continue; }
+        if (evt.type === 'content_block_delta' && evt.delta && evt.delta.type === 'text_delta') text += evt.delta.text || '';
+        else if (evt.type === 'message_delta' && evt.delta && evt.delta.stop_reason) stop = evt.delta.stop_reason;
+        else if (evt.type === 'error') throw new Error('SSE error: ' + JSON.stringify(evt).slice(0, 300));
+      }
+    }
+    if (!text) throw new Error('empty completion (stream)');
+    console.error(`segment done (stream): ${text.length} chars, stop=${stop}`);
     return text;
   } finally { clearTimeout(t); }
 }
@@ -172,6 +199,31 @@ const SECTIONS = [
   console.error('generate: segment C (biz/cn/hn JSON)...');
   const c = parseJSON(await callWithRetry(auth, segC, 32000));
   const data = { ...a, ...b, ...c };
+
+  // 跨分区去重：三段各自独立选题，同一事件可能被多个分区选中。
+  // 判断条件 = 同一 URL 且标题 2-gram 相似度 >= 0.5（skills.sh/GitHub 列表页等
+  // 共享主页链接的不同条目相似度低，不会被误删）。
+  const normT = t => String(t || '').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+  const bigrams = s => { const g = new Set(); for (let i = 0; i < s.length - 1; i++) g.add(s.slice(i, i + 2)); return g; };
+  const sim = (x, y) => {
+    const A = bigrams(normT(x)), B = bigrams(normT(y));
+    if (!A.size || !B.size) return 0;
+    let inter = 0;
+    for (const g of A) if (B.has(g)) inter++;
+    return inter / (A.size + B.size - inter);
+  };
+  const kept = [];
+  for (const [key] of SECTIONS) {
+    if (!Array.isArray(data[key])) continue;
+    data[key] = data[key].filter(it => {
+      const u = String((it && it.url) || '').trim();
+      if (!u || u === '#') { kept.push(it); return true; }
+      const dup = kept.find(k => String((k && k.url) || '').trim() === u && sim(it.title, k.title) >= 0.5);
+      if (dup) return false;
+      kept.push(it);
+      return true;
+    });
+  }
 
   const lines = [`# AI 资讯日报 · ${today}（周${weekday}）`, ''];
   const TECH_KEYS = new Set(['models', 'oss', 'papers', 'new']);

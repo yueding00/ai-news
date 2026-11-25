@@ -5,8 +5,12 @@ const fs = require('fs');
 const path = require('path');
 
 const pad = n => String(n).padStart(2, '0');
+const dateArg = (process.argv.find(a => a.startsWith('--date=')) || '').slice(7);
+if (dateArg && !/^\d{4}-\d{2}-\d{2}$/.test(dateArg)) { console.error('rule-push: bad --date, expect YYYY-MM-DD'); process.exit(1); }
 const now = new Date();
-const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+const today = dateArg || `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+const [yy, mm, dd] = today.split('-').map(Number);
+const weekday = ['日', '一', '二', '三', '四', '五', '六'][new Date(today + 'T12:00:00').getDay()];
 const ROOT = process.env.AI_NEWS_DIR || 'D:\\ai-news';
 const MD = path.join(ROOT, `${today}.md`);
 if (!fs.existsSync(MD)) { console.error(`rule-push: missing ${MD}`); process.exit(1); }
@@ -50,7 +54,7 @@ function line(it, idx, numbered) {
 }
 
 const out = [];
-out.push(`# AI 日报 · ${now.getMonth() + 1}月${now.getDate()}日 周${['日', '一', '二', '三', '四', '五', '六'][now.getDay()]}`);
+out.push(`# AI 日报 · ${mm}月${dd}日 周${weekday}`);
 out.push('');
 if ((items.hot || []).length) {
   out.push('**🔥 头条**');
